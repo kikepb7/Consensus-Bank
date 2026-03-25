@@ -13,7 +13,7 @@ contract ConsensusBankTest is Test {
 
     function testDepositEth() public {
         consensusBank.depositEth{value: 1 ether}();
-        
+         
         assertEq(consensusBank.getBalance(address(this)), 1 ether);
     }
 

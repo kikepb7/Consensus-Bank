@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-contract ConsensusBank {
-    mapping(address => uint256) private balances;
+contract ConsensusBank { 
 
-    bool private locked;
+    struct Account {
+        uint256 balance;
+        uint256 lastUpdate;
+    }
+
+    mapping(address => Account ) private accounts;
+
+    uint256 public constant INTEREST_RATE = 5; // 5% per year
+    uint256 public constant SECONDS_IN_YEAR = 365 days;
+
+    bool private locked; 
 
     modifier nonReentrant() {
         require(!locked, "Reentrant call");
@@ -20,17 +29,22 @@ contract ConsensusBank {
     function depositEth() external payable {
         require(msg.value > 0, "Must send ETH");
 
-        balances[msg.sender] += msg.value;
+        _updateBalance(msg.sender);
 
-        emit DepositEth(msg.sender, msg.value);  
+        accounts[msg.sender].balance += msg.value;
+        accounts[msg.sender].lastUpdate = block.timestamp;
+
+        emit DepositEth(msg.sender, msg.value);
     }
 
     // Withdraw ETH
     function withdrawEth(uint256 amount) external {
-        require(balances[msg.sender] >= amount, "Insufficient balance");
+        _updateBalance(msg.sender);
+
+        require(accounts[msg.sender].balance >= amount, "Insufficient balance");
 
         // Effects
-        balances[msg.sender] -= amount;
+        accounts[msg.sender].balance -= amount;
 
         // Interaction
         (bool success, ) = msg.sender.call{value: amount}("");
@@ -41,6 +55,31 @@ contract ConsensusBank {
 
     // Check balance
     function getBalance(address user) external view returns (uint256) {
-        return balances[user];
+        Account memory acc = accounts[user];
+
+        uint256 interest = _calculateInterest(user);
+
+        return acc.balance + interest;
     }
-} 
+
+    // Calculate acumulate interest
+    function _calculateInterest(address user) internal view returns (uint256) {
+        Account memory acc = accounts[user];
+
+        if (acc.balance == 0) return 0;
+
+        uint256 timeElapsed = block.timestamp - acc.lastUpdate;
+
+        uint256 interest = (acc.balance * INTEREST_RATE * timeElapsed) / (100 * SECONDS_IN_YEAR);
+
+        return interest;
+    }
+
+    // Update balance with interest
+    function _updateBalance(address user) internal {
+        uint256 interest = _calculateInterest(user);
+
+        accounts[user].balance += interest;
+        accounts[user].lastUpdate = block.timestamp;
+    }
+}  
