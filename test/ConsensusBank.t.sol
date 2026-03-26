@@ -78,4 +78,31 @@ contract ConsensusBankTest is Test {
 
         assertApproxEqAbs(balance, 1.05 ether, 1e14);
     }
+
+    function testBorrow() public {
+        consensusBank.depositEth{value: 1 ether}();
+
+        consensusBank.borrow(0.5 ether);
+
+        uint256 debt = consensusBank.getDebt(address(this));
+        assertEq(debt, 0.5 ether);
+    }
+
+    function testBorrowExceedsLTV() public {
+        consensusBank.depositEth{value: 1 ether}();
+         
+         vm.expectRevert("Exceeds LTV");
+         consensusBank.borrow(1 ether);
+    }
+
+    function testLoanInterest() public {
+        consensusBank.depositEth{value: 1 ether}();
+        consensusBank.borrow(0.5 ether);
+
+        vm.warp(block.timestamp + 365 days);
+
+        uint256 debt = consensusBank.getDebt(address(this));
+
+        assertGt(debt, 0.5 ether);
+    }
 }

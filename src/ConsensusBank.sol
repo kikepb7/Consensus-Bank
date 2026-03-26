@@ -8,10 +8,18 @@ contract ConsensusBank {
         uint256 lastUpdate;
     }
 
-    mapping(address => Account ) private accounts;
+    struct Loan {
+        uint256 amount;
+        uint256 lastUpdate;
+    } 
 
     uint256 public constant INTEREST_RATE = 5; // 5% per year
     uint256 public constant SECONDS_IN_YEAR = 365 days;
+    uint256 public constant LTV = 70; // 70%
+    uint256 public constant LOAN_INTEREST_RATE = 8; // 8% per year 
+
+    mapping(address => Account ) private accounts;
+    mapping(address => Loan) private loans;
 
     bool private locked; 
 
@@ -24,6 +32,9 @@ contract ConsensusBank {
 
     event DepositEth(address indexed user, uint256 amount);
     event WithdrawEth(address indexed user, uint256 amount);
+
+
+    // ---- ACCOUNT ----
 
     // Deposit ETH
     function depositEth() external payable {
@@ -62,15 +73,19 @@ contract ConsensusBank {
         return acc.balance + interest;
     }
 
+
+
+    // ---- INTEREST ----
+
     // Calculate acumulate interest
     function _calculateInterest(address user) internal view returns (uint256) {
-        Account memory acc = accounts[user];
+        Account memory account = accounts[user];
 
-        if (acc.balance == 0) return 0;
+        if (account.balance == 0) return 0;
 
-        uint256 timeElapsed = block.timestamp - acc.lastUpdate;
+        uint256 timeElapsed = block.timestamp - account.lastUpdate;
 
-        uint256 interest = (acc.balance * INTEREST_RATE * timeElapsed) / (100 * SECONDS_IN_YEAR);
+        uint256 interest = (account.balance * INTEREST_RATE * timeElapsed) / (100 * SECONDS_IN_YEAR);
 
         return interest;
     }
@@ -82,4 +97,73 @@ contract ConsensusBank {
         accounts[user].balance += interest;
         accounts[user].lastUpdate = block.timestamp;
     }
-}  
+
+
+
+    // ---- LOANS ----
+
+    // Calculate debt with interest
+    function _calculateLoanInterest(address user) internal view returns (uint256) {
+        Loan memory loan = loans[user];
+
+        if (loan.amount == 0) return 0;
+
+        uint256 timeElapsed = block.timestamp - loan.lastUpdate;
+
+        uint256 interest = (loan.amount * LOAN_INTEREST_RATE * timeElapsed) / (100 * SECONDS_IN_YEAR);
+
+        return interest;
+    } 
+
+    // Update loan
+    function _updateLoan(address user) internal {
+        uint256 interest = _calculateLoanInterest(user);
+
+        loans[user].amount += interest;
+        loans[user].lastUpdate = block.timestamp;
+    }
+
+    // Borrow
+    function borrow(uint256 amount) external nonReentrant {
+        _updateBalance(msg.sender);
+        _updateLoan(msg.sender);
+
+        uint256 collateral = accounts[msg.sender].balance;
+        uint256 maxBorrow = (collateral * LTV) / 100;
+
+        require(loans[msg.sender].amount + amount <= maxBorrow, "Exceeds LTV");
+
+
+        loans[msg.sender].amount += amount;
+        loans[msg.sender].lastUpdate = block.timestamp;
+
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+
+    // Repay loan
+    function repayLoan() external payable nonReentrant {
+        require(msg.value > 0, "Must repay something");
+
+        _updateLoan(msg.sender);
+
+        uint256 debt = loans[msg.sender].amount;
+
+        if (msg.value >= debt) {
+            loans[msg.sender].amount = 0;
+        } else {
+            loans[msg.sender].amount -= msg.value; 
+        }
+
+        loans[msg.sender].lastUpdate = block.timestamp;
+    }
+
+    // Check debt
+    function getDebt(address user) external view returns (uint256) {
+        Loan memory loan = loans[user];
+
+        uint256 interest = _calculateLoanInterest(user);
+
+        return loan.amount + interest;
+    }
+}
