@@ -8,7 +8,7 @@ contract ConsensusBankTest is Test {
     ConsensusBank consensusBank;
 
     function setUp() public {
-        consensusBank = new ConsensusBank();
+        consensusBank = new ConsensusBank(); 
     }
 
     function testDepositEth() public {
@@ -55,5 +55,27 @@ contract ConsensusBankTest is Test {
         attacker.attack{value: 1 ether}();
  
         // If the smart contract is safe, the attack will fail
+    }
+
+    function testtInterestAccrual() public {
+        consensusBank.depositEth{value: 1 ether}();
+
+        // Move one year ahead
+        vm.warp(block.timestamp + 365 days);
+
+        uint256 balance = consensusBank.getBalance(address(this));
+
+        // Around 1.05 ETH
+        assert(balance, 1 ether);
+    }
+
+    function testExactInterest() public {
+        consensusBank.depositEth{value: 1 ether}();
+ 
+        vm.warp(block.timestamp + 365 days);
+
+        uint256 balance = consensusBank.getBalance(address(this));
+
+        assertApproxEqAbs(balance, 1.05 ether, 1e14);
     }
 }
